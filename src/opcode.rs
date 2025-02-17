@@ -2003,3 +2003,29 @@ opcode! {
         Entry(sqe)
     }
 }
+
+// === 6.15 ===
+
+opcode! {
+    /// Receive multiple messages from a socket in zero-copy mode.
+    pub struct RecvZcMulti {
+        fd: { impl sealed::UseFixed },
+        ;;
+        flags: i32 = 0,
+        ifq_index: u32 = 0
+    }
+
+    pub const CODE = sys::IORING_OP_RECV_ZC;
+
+    pub fn build(self) -> Entry {
+        let RecvZcMulti { fd, flags, ifq_index } = self;
+
+        let mut sqe = sqe_zeroed();
+        sqe.opcode = Self::CODE;
+        assign_fd!(sqe.fd = fd);
+        sqe.__bindgen_anon_3.msg_flags = flags as _;
+        sqe.__bindgen_anon_5.zcrx_ifq_idx = ifq_index;
+        sqe.ioprio = sys::IORING_RECV_MULTISHOT as _;
+        Entry(sqe)
+    }
+}
