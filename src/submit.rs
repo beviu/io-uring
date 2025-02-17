@@ -660,4 +660,81 @@ impl<'a> Submitter<'a> {
         )
         .map(drop)
     }
+
+    /// Register network interface hardware queue for zero-copy receiving.
+    ///
+    /// Details can be found in the io_uring_register_zcrx_ifq.3 man page.
+    ///
+    /// If the register command is not supported, the InvalidInput error is returned.
+    ///
+    /// Available since 6.15.
+    ///
+    /// # Safety
+    ///
+    /// Developers must ensure that the memory areas at `area_addr` of length `area_len` and
+    /// at `region_addr` of size `region_size` are valid until the ring is destroyed, otherwise
+    /// undefined behaviour may occur.
+    ///
+    /// Developers must also ensure that the refill buffer entries are correct. See the man page for
+    /// more information.
+    pub unsafe fn register_zcrx_ifq(
+        &self,
+        if_idx: u32,
+        if_rxq: u32,
+        rq_entries: u32,
+        area_addr: u64,
+        area_len: u64,
+        region_addr: u64,
+        region_size: u64,
+    ) -> io::Result<IfqParameters> {
+        let mut area = sys::io_uring_zcrx_area_reg {
+            addr: area_addr,
+            len: area_len,
+            ..Default::default()
+        };
+
+        let mut region = sys::io_uring_region_desc {
+            user_addr: region_addr,
+            size: region_size,
+            flags: sys::IORING_MEM_REGION_TYPE_USER,
+            ..Default::default()
+        };
+
+        let mut arg = sys::io_uring_zcrx_ifq_reg {
+            if_idx,
+            if_rxq,
+            rq_entries,
+            flags: 0,
+
+            area_ptr: &mut area as *mut _ as u64,
+            region_ptr: &mut region as *mut _ as u64,
+
+            ..Default::default()
+        };
+
+        execute(
+            self.fd.as_raw_fd(),
+            sys::IORING_REGISTER_ZCRX_IFQ,
+            cast_ptr::<sys::io_uring_zcrx_ifq_reg>(&mut arg).cast(),
+            1,
+        )?;
+
+        Ok(IfqParameters {
+            offset_head: arg.offsets.head,
+            offset_tail: arg.offsets.tail,
+            offset_rqes: arg.offsets.rqes,
+            rq_area_token: area.rq_area_token,
+            rq_entries: arg.rq_entries,
+        })
+    }
+}
+
+/// Parameters returned by the kernel when registering a network interface hardware queue for
+/// zero-copy receiving.
+pub struct IfqParameters {
+    pub offset_head: u32,
+    pub offset_tail: u32,
+    pub offset_rqes: u32,
+    pub rq_area_token: u64,
+    pub rq_entries: u32,
 }
